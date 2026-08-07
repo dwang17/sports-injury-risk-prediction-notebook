@@ -46,6 +46,111 @@ categorical_features = X_train.select_dtypes(include=["object"]).columns
 cols_with_missing = [col for col in X_train.columns
                      if X_train[col].isnull().any()]
 
-#imputation (test mae of options 2 and 3 for imputtion in missing values tutorial)
-X_train_plus = X_train.copy()
-y_train_plus = y_train.copy()
+
+#for learning purposes, prob wont use for model deployment
+# from sklearn.impute import SimpleImputer
+# #imputation (test mae of options 2 and 3 for imputtion in missing values tutorial, use 2 for now)
+# #use median imputation for now to handle outliers
+# my_imputer = SimpleImputer(strategy="median")
+# imputed_X_train = X_train.copy()
+# imputed_X_test = X_test.copy()
+
+# imputed_X_train[numeric_features] = my_imputer.fit_transform(
+#     X_train[numeric_features]
+# )
+
+# imputed_X_test[numeric_features] = my_imputer.transform(
+#     X_test[numeric_features]
+# )
+
+# #handle sport type seperately with one-hot-encoding
+# from sklearn.preprocessing import OneHotEncoder
+
+# OH_encoder = OneHotEncoder(
+#     handle_unknown="ignore",
+#     sparse_output=False
+# )
+
+# # encode categorical columns
+# OH_cols_train = pd.DataFrame(
+#     OH_encoder.fit_transform(imputed_X_train[categorical_features]),
+#     index=imputed_X_train.index,
+#     columns=OH_encoder.get_feature_names_out(categorical_features)
+# )
+
+# OH_cols_test = pd.DataFrame(
+#     OH_encoder.transform(imputed_X_test[categorical_features]),
+#     index=imputed_X_test.index,
+#     columns=OH_encoder.get_feature_names_out(categorical_features)
+# )
+
+# # drop original categorical columns from the IMPUTED data
+# num_X_train = imputed_X_train.drop(categorical_features, axis=1)
+# num_X_test = imputed_X_test.drop(categorical_features, axis=1)
+
+# # combine numeric and encoded categorical features
+# OH_X_train = pd.concat([num_X_train, OH_cols_train], axis=1)
+# OH_X_test = pd.concat([num_X_test, OH_cols_test], axis=1)
+
+# print(OH_X_train.isnull().sum().sum())  # should print 0
+# print(OH_X_train.shape)
+# print(OH_X_test.shape)
+
+# #last thing, scale to given range on training set with Min Max Scaler
+# scaler = MinMaxScaler()
+
+# OH_X_train = scaler.fit_transform(OH_X_train)
+# OH_X_test = scaler.transform(OH_X_test)
+
+
+#Preprocessing PIPELINE for automating of the above steps...
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+
+numeric_pipeline = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", MinMaxScaler())
+])
+
+categorical_pipeline = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(
+        handle_unknown="ignore",
+        sparse_output=False
+    ))
+])
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_pipeline, numeric_features),
+        ("cat", categorical_pipeline, categorical_features)
+    ]
+)
+
+
+#printing/validating processing
+print("TRAIN")
+X_train_processed = preprocessor.fit_transform(X_train)
+X_test_processed = preprocessor.transform(X_test)
+
+
+X_train_processed = pd.DataFrame(
+    X_train_processed,
+    columns=preprocessor.get_feature_names_out()
+)
+
+print(X_train_processed.describe())
+# print(X_train_processed)
+# print(X_train_processed.shape)
+print("TEST")
+
+X_test_processed = pd.DataFrame(
+    X_test_processed,
+    columns=preprocessor.get_feature_names_out()
+)
+
+print(X_test_processed.describe())
+# print(X_test_processed)
+# print(X_test_processed.shape)
