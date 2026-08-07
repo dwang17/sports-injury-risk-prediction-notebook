@@ -154,3 +154,32 @@ X_test_processed = pd.DataFrame(
 print(X_test_processed.describe())
 # print(X_test_processed)
 # print(X_test_processed.shape)
+
+
+#Define the logistic regression model to start
+from sklearn.linear_model import LogisticRegression
+
+logistic_model = Pipeline(steps=[
+    ("preprocessor", preprocessor),
+    ("classifier", LogisticRegression(max_iter=1000))
+])
+
+logistic_model.fit(X_train, y_train)
+y_pred = logistic_model.predict(X_test)
+
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+#Results show that we aren't correctly predicting low risk right now. fix for next time
+# Model: Logistic Regression
+# Accuracy: 0.678
+# Macro F1: 0.44
+# Injured Recall: 0.44
+# Low Risk Recall: 0.00
