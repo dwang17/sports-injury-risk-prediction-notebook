@@ -183,3 +183,95 @@ print(confusion_matrix(y_test, y_pred))
 # Macro F1: 0.44
 # Injured Recall: 0.44
 # Low Risk Recall: 0.00
+
+#Now we want to improve on the old one, so we will add some tweaks to the model parameters
+from sklearn.linear_model import LogisticRegression
+
+logistic_model = Pipeline(steps=[
+    ("preprocessor", preprocessor),
+    ("classifier", LogisticRegression(max_iter=1000, class_weight="balanced")) #since we have an imbalance in healthy, low risk, and injured, we balance it with class_weight param
+])
+
+logistic_model.fit(X_train, y_train)
+y_pred = logistic_model.predict(X_test)
+
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+#New results look like we are overtuning towards injury risk classes more now...
+# Model: Logistic Regression
+# Accuracy: 0.46
+# Macro F1: 0.46
+# Injured Recall: 0.84
+# Low Risk Recall: 0.38
+
+#Healthy Recall: 0.40 -> noticably lower now
+
+
+
+#We will now try a bagging classifier with Random Forest which averages out performance off multiple trees
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# Numeric preprocessing
+# Random Forest doesn't need MinMaxScaler
+numeric_pipeline_rf = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="median"))
+])
+
+# Categorical preprocessing (just in case sport_type has missing values, kinda not needed since it does'nt have any missing but nice to have)
+categorical_pipeline_rf = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore"))
+])
+
+# Apply appropriate preprocessing to each column type
+rf_preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_pipeline_rf, numeric_features),
+        ("cat", categorical_pipeline_rf, categorical_features)
+    ]
+)
+
+# Full preprocessing + Random Forest pipeline
+rf_model = Pipeline(steps=[
+    ("preprocessor", rf_preprocessor),
+    ("classifier", RandomForestClassifier(
+        class_weight="balanced",
+        random_state=42
+    ))
+])
+
+# Train
+rf_model.fit(X_train, y_train)
+
+# Predict
+y_pred = rf_model.predict(X_test)
+
+# Evaluate
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+# Baseline Random Forest doesn't look great...
+# Model: Random Forest (Balanced)
+# Accuracy: 0.66
+# Macro F1: 0.40
+# Injured Recall: 0.31
+# Low Risk Recall: 0.00 -> model completely fails to identify Low Risk
+# Healthy Recall: 0.97 -> heavily favors predicting Healthy
