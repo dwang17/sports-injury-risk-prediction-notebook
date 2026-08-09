@@ -386,3 +386,32 @@ print(confusion_matrix(y_test, y_pred))
 # Injured Recall: 0.47 -> identifies about half of actual injured cases
 # Low Risk Recall: 0.02 -> almost completely fails to identify Low Risk
 # Healthy Recall: 0.92 -> still strongly favors predicting Healthy
+
+
+#look at class details
+print(df["injury_occurred"].value_counts())
+print(df["injury_occurred"].value_counts(normalize=True))
+
+df.groupby("injury_occurred")[numeric_features].mean().T
+
+#investigate the data some more
+import matplotlib.pyplot as plt
+
+features = [
+    "sleep_quality",
+    "recovery_score",
+    "training_load",
+    "fatigue_index"
+]
+
+for feature in features:
+    df.boxplot(column=feature, by="injury_occurred")
+    plt.title(feature)
+    plt.suptitle("")
+    plt.xlabel("Injury Class")
+    plt.ylabel(feature)
+    plt.show()
+
+#Results show that for sleep_quality, fatigue_index, recovery_score, and training_load, we have similar baseline values for class 0 and 1, which causes model issues
+
+#To alleviate we will attempt custom weighting, then slight feature engineering, then maybe changing the problem to binary classification
