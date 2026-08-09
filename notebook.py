@@ -275,3 +275,114 @@ print(confusion_matrix(y_test, y_pred))
 # Injured Recall: 0.31
 # Low Risk Recall: 0.00 -> model completely fails to identify Low Risk
 # Healthy Recall: 0.97 -> heavily favors predicting Healthy
+
+#Heard HistGradientBoostingClassifier is good for datasets with >10,000 samples so we can try next....
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# HistGradientBoosting can handle numeric NaNs natively
+hgb_preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", "passthrough", numeric_features),
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+         categorical_features)
+    ]
+)
+
+hgb_model = Pipeline(steps=[
+    ("preprocessor", hgb_preprocessor),
+    ("classifier", HistGradientBoostingClassifier(
+        random_state=42
+    ))
+])
+
+hgb_model.fit(X_train, y_train)
+
+y_pred = hgb_model.predict(X_test)
+
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+# Baseline HistGradientBoosting performs better than Random Forest,
+# but still struggles heavily with the Low Risk class
+# Model: HistGradientBoostingClassifier
+# Accuracy: 0.67
+# Macro F1: 0.45
+# Injured Recall: 0.49 -> catches about half of actual injured cases
+# Low Risk Recall: 0.00 -> almost completely fails to identify Low Risk
+# Healthy Recall: 0.94 -> still heavily favors predicting Healthy
+
+
+#Lastly gonna investigate XGBoost and see if that helps
+# If not, then we will investigate the parameters / class imbalance more.
+
+from xgboost import XGBClassifier
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# Numeric preprocessing
+# XGBoost does NOT need MinMaxScaler
+numeric_pipeline_xgb = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="median"))
+])
+
+# Categorical preprocessing
+categorical_pipeline_xgb = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(
+        handle_unknown="ignore"
+    ))
+])
+
+# Apply preprocessing to numeric and categorical columns
+xgb_preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_pipeline_xgb, numeric_features),
+        ("cat", categorical_pipeline_xgb, categorical_features)
+    ]
+)
+
+# Full preprocessing + XGBoost pipeline
+xgb_model = Pipeline(steps=[
+    ("preprocessor", xgb_preprocessor),
+    ("classifier", XGBClassifier(
+        objective="multi:softprob",
+        num_class=3,
+        eval_metric="mlogloss",
+        random_state=42
+    ))
+])
+
+# Train
+xgb_model.fit(X_train, y_train)
+
+# Predict
+y_pred = xgb_model.predict(X_test)
+
+# Evaluate
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+# Baseline XGBoost still struggles heavily with the Low Risk class
+# Model: XGBoost
+# Accuracy: 0.66
+# Macro F1: 0.45
+# Injured Recall: 0.47 -> identifies about half of actual injured cases
+# Low Risk Recall: 0.02 -> almost completely fails to identify Low Risk
+# Healthy Recall: 0.92 -> still strongly favors predicting Healthy
