@@ -216,3 +216,84 @@ print(confusion_matrix(y_test, y_pred))
 # Conclusion:
 # Class weighting greatly improves injury detection at the cost of
 # increased false positives and lower overall accuracy.
+
+
+#Try Random Forest
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix
+)
+
+# Numeric preprocessing - no scaling needed for Random Forest
+numeric_pipeline_rf = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="median"))
+])
+
+# Categorical preprocessing
+categorical_pipeline_rf = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore"))
+])
+
+rf_preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_pipeline_rf, numeric_features),
+        ("cat", categorical_pipeline_rf, categorical_features)
+    ]
+)
+
+# Binary Random Forest
+binary_rf = Pipeline(steps=[
+    ("preprocessor", rf_preprocessor),
+    ("classifier", RandomForestClassifier(
+        class_weight="balanced",
+        random_state=42
+    ))
+])
+
+binary_rf.fit(X_train, y_train)
+
+y_pred = binary_rf.predict(X_test)
+
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+print("\nClassification Report:")
+print(classification_report(
+    y_test,
+    y_pred,
+    target_names=["Not Injured", "Injured"]
+))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+# Binary Random Forest with Balanced Class Weights
+
+# Accuracy: 0.86 -> higher than balanced Logistic Regression (0.80),
+# but accuracy is misleading because ~85% of the dataset is Not Injured
+
+# Macro F1: 0.58 -> significantly worse than balanced Logistic Regression (0.72)
+
+# Injured Precision: 0.66
+# -> when the model predicts Injured, it is correct 66% of the time
+
+# Injured Recall: 0.14
+# -> only catches 14% of actual Injured athletes, which is very poor
+
+# Injured F1: 0.24 -> poor balance between precision and recall
+
+# Not Injured Recall: 0.99
+# -> model overwhelmingly favors the Not Injured class
+
+# Conclusion:
+# Random Forest achieves higher overall accuracy and injury precision,
+# but misses most actual injuries. Balanced Logistic Regression is
+# currently much better for detecting the minority Injured class.
+
+# balanced Logistic Regression currently beats a more complex ensemble on minority-class detection, despite RF having higher headline accuracy.
