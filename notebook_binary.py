@@ -297,3 +297,199 @@ print(confusion_matrix(y_test, y_pred))
 # currently much better for detecting the minority Injured class.
 
 # balanced Logistic Regression currently beats a more complex ensemble on minority-class detection, despite RF having higher headline accuracy.
+
+
+#Try HGB
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# HGB can handle numeric NaNs directly
+hgb_preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", "passthrough", numeric_features),
+        ("cat", OneHotEncoder(
+            handle_unknown="ignore",
+            sparse_output=False
+        ), categorical_features)
+    ]
+)
+
+binary_hgb = Pipeline(steps=[
+    ("preprocessor", hgb_preprocessor),
+    ("classifier", HistGradientBoostingClassifier(
+        random_state=42,
+        class_weight="balanced"
+    ))
+])
+
+# Train
+binary_hgb.fit(X_train, y_train)
+
+# Predict
+y_pred = binary_hgb.predict(X_test)
+
+# Evaluate
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+print("\nClassification Report:")
+print(classification_report(
+    y_test,
+    y_pred,
+    target_names=["Not Injured", "Injured"]
+))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+
+# Binary HistGradientBoosting Baseline (No Class Weighting)
+
+# Accuracy: 0.88 -> highest so far, but remember majority baseline is ~0.85
+
+# Macro F1: 0.72
+
+# Injured Precision: 0.64
+# -> 64% of athletes predicted as Injured were actually Injured
+
+# Injured Recall: 0.42
+# -> catches 42% of actual Injured athletes
+
+# Injured F1: 0.51
+# -> better than Random Forest (0.24), but below balanced Logistic (0.57)
+
+# Not Injured Recall: 0.96
+# -> still favors the majority Not Injured class
+
+# Conclusion:
+# HGB provides a better precision/recall balance than Random Forest and
+# achieves strong overall accuracy, but still misses 58% of actual injuries.
+# Balanced Logistic Regression remains better for maximizing injury detection.
+
+
+
+# Binary HistGradientBoosting with Balanced Class Weights
+
+# Accuracy: 0.81 -> decreased from 0.88 after weighting
+
+# Macro F1: 0.72 -> remained approximately the same
+
+# Injured Precision: 0.43
+# -> decreased from 0.64 due to increased false-positive injury predictions
+
+# Injured Recall: 0.83
+# -> major improvement from 0.42; catches 83% of actual injuries
+
+# Injured F1: 0.57
+# -> improved from 0.51 due to much stronger injury recall
+
+# Not Injured Recall: 0.81
+# -> decreased from 0.96 as the model predicts Injured more aggressively
+
+# Conclusion:
+# Class weighting significantly improved injury detection while increasing
+# false positives. Balanced HGB provides a much better minority-class
+# precision/recall tradeoff than the unweighted model.
+
+
+#Lastly trying XGBoost
+from xgboost import XGBClassifier
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# XGBoost doesn't need feature scaling
+numeric_pipeline_xgb = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="median"))
+])
+
+categorical_pipeline_xgb = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(
+        handle_unknown="ignore"
+    ))
+])
+
+xgb_preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_pipeline_xgb, numeric_features),
+        ("cat", categorical_pipeline_xgb, categorical_features)
+    ]
+)
+
+# Calculate imbalance ratio using TRAINING data only
+negative_count = (y_train == 0).sum()
+positive_count = (y_train == 1).sum()
+
+scale_pos_weight = negative_count / positive_count
+
+print("scale_pos_weight:", scale_pos_weight)
+
+# Binary XGBoost
+binary_xgb = Pipeline(steps=[
+    ("preprocessor", xgb_preprocessor),
+    ("classifier", XGBClassifier(
+        n_estimators=200,
+        max_depth=4,
+        learning_rate=0.05,
+        scale_pos_weight=scale_pos_weight,
+        eval_metric="logloss",
+        random_state=42
+    ))
+])
+
+# Train
+binary_xgb.fit(X_train, y_train)
+
+# Predict
+y_pred = binary_xgb.predict(X_test)
+
+# Evaluate
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+print("\nClassification Report:")
+print(classification_report(
+    y_test,
+    y_pred,
+    target_names=["Not Injured", "Injured"]
+))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+# Binary XGBoost with Class Imbalance Weighting
+
+# scale_pos_weight: 5.66
+# -> Injured samples are weighted ~5.66x more heavily because the
+#    training data contains ~5.66 Not Injured samples per Injured sample
+
+# Accuracy: 0.79
+# -> lower overall accuracy, largely due to more false-positive injury predictions
+
+# Macro F1: 0.71
+
+# Injured Precision: 0.41
+# -> 41% of athletes predicted as Injured were actually Injured
+
+# Injured Recall: 0.89
+# -> catches 89% of actual injuries, the highest recall of our models so far
+
+# Injured F1: 0.56
+# -> strong recall but lower precision keeps F1 around 0.56
+
+# Not Injured Recall: 0.77
+# -> decreased because the model is more aggressive about predicting Injured
+
+# Confusion Matrix:
+# 414 / 463 actual injuries correctly detected
+# 49 / 463 actual injuries missed
+# 590 false-positive injury predictions
+
+# Conclusion:
+# XGBoost achieves excellent injury recall but generates many false positives.
+# Its Injured F1 is similar to Balanced Logistic/HGB, so it does not clearly
+# outperform them yet.
