@@ -245,41 +245,6 @@ import numpy as np
 import shap
 import matplotlib.pyplot as plt
 
-# TRUE POSITIVE
-print("\nTRUE POSITIVE")
-print("----------------")
-
-for feature, value, shap_val in zip(
-    X_test_shap.columns,
-    X_test_shap.iloc[tp_idx],
-    shap_values[tp_idx].values
-):
-    print(f"{feature}: value={value:.3f}, SHAP={shap_val:+.3f}")
-
-
-# FALSE POSITIVE
-print("\nFALSE POSITIVE")
-print("----------------")
-
-for feature, value, shap_val in zip(
-    X_test_shap.columns,
-    X_test_shap.iloc[fp_idx],
-    shap_values[fp_idx].values
-):
-    print(f"{feature}: value={value:.3f}, SHAP={shap_val:+.3f}")
-
-
-# FALSE NEGATIVE
-print("\nFALSE NEGATIVE")
-print("----------------")
-
-for feature, value, shap_val in zip(
-    X_test_shap.columns,
-    X_test_shap.iloc[fn_idx],
-    shap_values[fn_idx].values
-):
-    print(f"{feature}: value={value:.3f}, SHAP={shap_val:+.3f}")
-
 
 # ------------------------------------------------------------
 # 1. Get final model predictions using our tuned threshold
@@ -419,6 +384,42 @@ shap.plots.waterfall(
 
 plt.show()
 
+# TRUE POSITIVE
+print("\nTRUE POSITIVE")
+print("----------------")
+
+for feature, value, shap_val in zip(
+    X_test_shap.columns,
+    X_test_shap.iloc[tp_idx],
+    shap_values[tp_idx].values
+):
+    print(f"{feature}: value={value:.3f}, SHAP={shap_val:+.3f}")
+
+
+# FALSE POSITIVE
+print("\nFALSE POSITIVE")
+print("----------------")
+
+for feature, value, shap_val in zip(
+    X_test_shap.columns,
+    X_test_shap.iloc[fp_idx],
+    shap_values[fp_idx].values
+):
+    print(f"{feature}: value={value:.3f}, SHAP={shap_val:+.3f}")
+
+
+# FALSE NEGATIVE
+print("\nFALSE NEGATIVE")
+print("----------------")
+
+for feature, value, shap_val in zip(
+    X_test_shap.columns,
+    X_test_shap.iloc[fn_idx],
+    shap_values[fn_idx].values
+):
+    print(f"{feature}: value={value:.3f}, SHAP={shap_val:+.3f}")
+
+
 
 
 # ============================================================
@@ -556,3 +557,235 @@ plt.ylabel("Number of Test Examples")
 plt.title("Distribution of Predicted Injury Probabilities")
 
 plt.show()
+
+
+
+# ============================================================
+# PROBABILITY CALIBRATION — SIGMOID VS ISOTONIC
+# ============================================================
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+from sklearn.metrics import brier_score_loss, roc_auc_score
+
+
+# ------------------------------------------------------------
+# 1. Current uncalibrated model probabilities
+# ------------------------------------------------------------
+
+proba_uncalibrated = best_hgb.predict_proba(X_test)[:, 1]
+
+
+# ------------------------------------------------------------
+# 2. Build calibrated versions
+# ------------------------------------------------------------
+# We use cv=5 so calibration is learned using cross-validation
+# on the TRAINING SET only.
+#
+# This avoids fitting the calibrator directly on X_test/y_test.
+
+sigmoid_model = CalibratedClassifierCV(
+    estimator=best_hgb,
+    method="sigmoid",
+    cv=5
+)
+
+isotonic_model = CalibratedClassifierCV(
+    estimator=best_hgb,
+    method="isotonic",
+    cv=5
+)
+
+
+# ------------------------------------------------------------
+# 3. Fit calibrated models on TRAINING DATA ONLY
+# ------------------------------------------------------------
+
+sigmoid_model.fit(X_train, y_train)
+
+isotonic_model.fit(X_train, y_train)
+
+
+# ------------------------------------------------------------
+# 4. Get calibrated probabilities on HELD-OUT TEST SET
+# ------------------------------------------------------------
+
+proba_sigmoid = sigmoid_model.predict_proba(X_test)[:, 1]
+
+proba_isotonic = isotonic_model.predict_proba(X_test)[:, 1]
+
+
+# ------------------------------------------------------------
+# 5. Compare Brier scores
+# ------------------------------------------------------------
+# Lower Brier score = better probability calibration
+
+brier_uncalibrated = brier_score_loss(
+    y_test,
+    proba_uncalibrated
+)
+
+brier_sigmoid = brier_score_loss(
+    y_test,
+    proba_sigmoid
+)
+
+brier_isotonic = brier_score_loss(
+    y_test,
+    proba_isotonic
+)
+
+
+# ------------------------------------------------------------
+# 6. Compare ROC-AUC
+# ------------------------------------------------------------
+# ROC-AUC should usually remain fairly similar because
+# calibration mainly changes probability scaling rather than
+# the overall ranking of examples.
+
+auc_uncalibrated = roc_auc_score(
+    y_test,
+    proba_uncalibrated
+)
+
+auc_sigmoid = roc_auc_score(
+    y_test,
+    proba_sigmoid
+)
+
+auc_isotonic = roc_auc_score(
+    y_test,
+    proba_isotonic
+)
+
+
+# ------------------------------------------------------------
+# 7. Print comparison table
+# ------------------------------------------------------------
+
+results = pd.DataFrame({
+    "Model": [
+        "Uncalibrated HGB",
+        "Sigmoid calibrated HGB",
+        "Isotonic calibrated HGB"
+    ],
+    "Brier Score": [
+        brier_uncalibrated,
+        brier_sigmoid,
+        brier_isotonic
+    ],
+    "ROC-AUC": [
+        auc_uncalibrated,
+        auc_sigmoid,
+        auc_isotonic
+    ]
+})
+
+print(results)
+
+
+# ------------------------------------------------------------
+# 8. Build calibration curves
+# ------------------------------------------------------------
+
+frac_uncal, mean_uncal = calibration_curve(
+    y_test,
+    proba_uncalibrated,
+    n_bins=10,
+    strategy="quantile"
+)
+
+frac_sigmoid, mean_sigmoid = calibration_curve(
+    y_test,
+    proba_sigmoid,
+    n_bins=10,
+    strategy="quantile"
+)
+
+frac_isotonic, mean_isotonic = calibration_curve(
+    y_test,
+    proba_isotonic,
+    n_bins=10,
+    strategy="quantile"
+)
+
+
+# ------------------------------------------------------------
+# 9. Plot all calibration curves together
+# ------------------------------------------------------------
+
+plt.figure(figsize=(9, 7))
+
+# Perfect calibration
+plt.plot(
+    [0, 1],
+    [0, 1],
+    linestyle="--",
+    label="Perfect calibration"
+)
+
+# Uncalibrated HGB
+plt.plot(
+    mean_uncal,
+    frac_uncal,
+    marker="o",
+    label="Uncalibrated HGB"
+)
+
+# Sigmoid calibrated
+plt.plot(
+    mean_sigmoid,
+    frac_sigmoid,
+    marker="o",
+    label="Sigmoid"
+)
+
+# Isotonic calibrated
+plt.plot(
+    mean_isotonic,
+    frac_isotonic,
+    marker="o",
+    label="Isotonic"
+)
+
+plt.xlabel("Mean Predicted Injury Probability")
+plt.ylabel("Actual Fraction Injured")
+plt.title("Calibration Comparison")
+
+plt.legend()
+plt.grid(alpha=0.3)
+
+plt.show()
+
+
+# ------------------------------------------------------------
+# 10. Print calibration-bin values
+# ------------------------------------------------------------
+
+print("\nSIGMOID CALIBRATION")
+print("-------------------")
+
+for predicted, actual in zip(
+    mean_sigmoid,
+    frac_sigmoid
+):
+    print(
+        f"Predicted: {predicted:.3f} | "
+        f"Actual injury rate: {actual:.3f}"
+    )
+
+
+print("\nISOTONIC CALIBRATION")
+print("--------------------")
+
+for predicted, actual in zip(
+    mean_isotonic,
+    frac_isotonic
+):
+    print(
+        f"Predicted: {predicted:.3f} | "
+        f"Actual injury rate: {actual:.3f}"
+    )
