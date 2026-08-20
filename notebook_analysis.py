@@ -235,3 +235,186 @@ shap.plots.beeswarm(
 print(df.groupby("injury_binary")["recovery_score"].describe())
 print(df.groupby("injury_binary")["recovery_score"].mean())
 print(df[["recovery_score", "injury_binary"]].corr())
+
+
+# ============================================================
+# SHAP LOCAL INTERPRETABILITY — TP / FP / FN
+# ============================================================
+
+import numpy as np
+import shap
+import matplotlib.pyplot as plt
+
+# TRUE POSITIVE
+print("\nTRUE POSITIVE")
+print("----------------")
+
+for feature, value, shap_val in zip(
+    X_test_shap.columns,
+    X_test_shap.iloc[tp_idx],
+    shap_values[tp_idx].values
+):
+    print(f"{feature}: value={value:.3f}, SHAP={shap_val:+.3f}")
+
+
+# FALSE POSITIVE
+print("\nFALSE POSITIVE")
+print("----------------")
+
+for feature, value, shap_val in zip(
+    X_test_shap.columns,
+    X_test_shap.iloc[fp_idx],
+    shap_values[fp_idx].values
+):
+    print(f"{feature}: value={value:.3f}, SHAP={shap_val:+.3f}")
+
+
+# FALSE NEGATIVE
+print("\nFALSE NEGATIVE")
+print("----------------")
+
+for feature, value, shap_val in zip(
+    X_test_shap.columns,
+    X_test_shap.iloc[fn_idx],
+    shap_values[fn_idx].values
+):
+    print(f"{feature}: value={value:.3f}, SHAP={shap_val:+.3f}")
+
+
+# ------------------------------------------------------------
+# 1. Get final model predictions using our tuned threshold
+# ------------------------------------------------------------
+
+# Probability of class 1 = Injured
+y_proba = best_hgb.predict_proba(X_test)[:, 1]
+
+# Apply our selected threshold
+y_pred = (y_proba >= BEST_THRESHOLD).astype(int)
+
+# Convert y_test to numpy so positional indexing is easy
+y_true = y_test.to_numpy()
+
+
+# ------------------------------------------------------------
+# 2. Find TP, FP, and FN examples
+# ------------------------------------------------------------
+
+# True Positive:
+# Actually injured AND predicted injured
+tp_indices = np.where(
+    (y_true == 1) & (y_pred == 1)
+)[0]
+
+# False Positive:
+# Actually not injured BUT predicted injured
+fp_indices = np.where(
+    (y_true == 0) & (y_pred == 1)
+)[0]
+
+# False Negative:
+# Actually injured BUT predicted not injured
+fn_indices = np.where(
+    (y_true == 1) & (y_pred == 0)
+)[0]
+
+
+print("Prediction counts")
+print("-----------------")
+print("True Positives:", len(tp_indices))
+print("False Positives:", len(fp_indices))
+print("False Negatives:", len(fn_indices))
+
+
+# ------------------------------------------------------------
+# 3. Select one example from each category
+# ------------------------------------------------------------
+
+tp_idx = tp_indices[0]
+fp_idx = fp_indices[0]
+fn_idx = fn_indices[0]
+
+
+# ------------------------------------------------------------
+# 4. Display prediction information
+# ------------------------------------------------------------
+
+print("\nSelected examples")
+print("-----------------")
+
+print(
+    f"True Positive  | "
+    f"Actual: {y_true[tp_idx]} | "
+    f"Predicted: {y_pred[tp_idx]} | "
+    f"Injury probability: {y_proba[tp_idx]:.3f}"
+)
+
+print(
+    f"False Positive | "
+    f"Actual: {y_true[fp_idx]} | "
+    f"Predicted: {y_pred[fp_idx]} | "
+    f"Injury probability: {y_proba[fp_idx]:.3f}"
+)
+
+print(
+    f"False Negative | "
+    f"Actual: {y_true[fn_idx]} | "
+    f"Predicted: {y_pred[fn_idx]} | "
+    f"Injury probability: {y_proba[fn_idx]:.3f}"
+)
+
+
+# ------------------------------------------------------------
+# 5. SHAP WATERFALL — TRUE POSITIVE
+# ------------------------------------------------------------
+
+print("\nTRUE POSITIVE")
+print(
+    f"Actual = Injured | "
+    f"Predicted = Injured | "
+    f"Probability = {y_proba[tp_idx]:.3f}"
+)
+
+shap.plots.waterfall(
+    shap_values[tp_idx],
+    max_display=15
+)
+
+plt.show()
+
+
+# ------------------------------------------------------------
+# 6. SHAP WATERFALL — FALSE POSITIVE
+# ------------------------------------------------------------
+
+print("\nFALSE POSITIVE")
+print(
+    f"Actual = Not Injured | "
+    f"Predicted = Injured | "
+    f"Probability = {y_proba[fp_idx]:.3f}"
+)
+
+shap.plots.waterfall(
+    shap_values[fp_idx],
+    max_display=15
+)
+
+plt.show()
+
+
+# ------------------------------------------------------------
+# 7. SHAP WATERFALL — FALSE NEGATIVE
+# ------------------------------------------------------------
+
+print("\nFALSE NEGATIVE")
+print(
+    f"Actual = Injured | "
+    f"Predicted = Not Injured | "
+    f"Probability = {y_proba[fn_idx]:.3f}"
+)
+
+shap.plots.waterfall(
+    shap_values[fn_idx],
+    max_display=15
+)
+
+plt.show()
