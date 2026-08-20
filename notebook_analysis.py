@@ -418,3 +418,141 @@ shap.plots.waterfall(
 )
 
 plt.show()
+
+
+
+# ============================================================
+# PROBABILITY CALIBRATION — BASELINE EVALUATION
+# ============================================================
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import brier_score_loss
+
+
+# ------------------------------------------------------------
+# 1. Get current UNCALIBRATED probabilities
+# ------------------------------------------------------------
+
+# Probability that each test example belongs to:
+# class 1 = Injured
+y_proba_uncalibrated = best_hgb.predict_proba(X_test)[:, 1]
+
+
+# ------------------------------------------------------------
+# 2. Calculate Brier Score
+# ------------------------------------------------------------
+# Brier score measures how close predicted probabilities
+# are to the actual binary outcomes.
+#
+# Perfect = 0
+# Lower = better
+#
+# Example:
+# prediction = 0.90, actual = 1 -> small error
+# prediction = 0.90, actual = 0 -> large error
+
+brier_uncalibrated = brier_score_loss(
+    y_test,
+    y_proba_uncalibrated
+)
+
+print("Uncalibrated Brier Score:", brier_uncalibrated)
+# Uncalibrated HGB Brier: 0.11194
+
+# ------------------------------------------------------------
+# 3. Create calibration curve
+# ------------------------------------------------------------
+# We divide predictions into probability bins.
+#
+# For each bin:
+#
+# mean_predicted_value =
+#     average probability predicted by the model
+#
+# fraction_of_positives =
+#     actual fraction of injured examples in that bin
+#
+# Example:
+#
+# Average prediction = 0.70
+# Actual injury rate = 0.50
+#
+# -> model is overconfident
+
+fraction_of_positives, mean_predicted_value = calibration_curve(
+    y_test,
+    y_proba_uncalibrated,
+    n_bins=10,
+    strategy="quantile"
+)
+
+
+# ------------------------------------------------------------
+# 4. Print calibration values
+# ------------------------------------------------------------
+
+print("\nCalibration Results")
+print("-------------------")
+
+for predicted, actual in zip(
+    mean_predicted_value,
+    fraction_of_positives
+):
+    print(
+        f"Predicted probability: {predicted:.3f} | "
+        f"Actual injury rate: {actual:.3f}"
+    )
+
+
+# ------------------------------------------------------------
+# 5. Plot calibration curve
+# ------------------------------------------------------------
+
+plt.figure(figsize=(8, 6))
+
+# Perfect calibration line
+plt.plot(
+    [0, 1],
+    [0, 1],
+    linestyle="--",
+    label="Perfect calibration"
+)
+
+# Our HGB model
+plt.plot(
+    mean_predicted_value,
+    fraction_of_positives,
+    marker="o",
+    label="HGB (uncalibrated)"
+)
+
+plt.xlabel("Mean Predicted Injury Probability")
+plt.ylabel("Actual Fraction Injured")
+plt.title("Calibration Curve — HistGradientBoosting")
+
+plt.legend()
+plt.grid(alpha=0.3)
+
+plt.show()
+
+
+# ------------------------------------------------------------
+# 6. Inspect probability distribution
+# ------------------------------------------------------------
+
+plt.figure(figsize=(8, 6))
+
+plt.hist(
+    y_proba_uncalibrated,
+    bins=20,
+    edgecolor="black"
+)
+
+plt.xlabel("Predicted Injury Probability")
+plt.ylabel("Number of Test Examples")
+plt.title("Distribution of Predicted Injury Probabilities")
+
+plt.show()
