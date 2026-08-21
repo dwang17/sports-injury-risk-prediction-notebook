@@ -789,3 +789,404 @@ for predicted, actual in zip(
         f"Predicted: {predicted:.3f} | "
         f"Actual injury rate: {actual:.3f}"
     )
+
+
+
+
+# ============================================================
+# CALIBRATED MODEL — THRESHOLD TUNING
+# ============================================================
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.metrics import (
+    precision_score,
+    recall_score,
+    f1_score,
+    accuracy_score,
+    classification_report,
+    confusion_matrix
+)
+
+
+# ------------------------------------------------------------
+# 1. Cross-validation setup
+# ------------------------------------------------------------
+# Same CV strategy we've been using.
+#
+# IMPORTANT:
+# Threshold selection happens using X_train/y_train ONLY.
+# The held-out test set remains untouched.
+
+cv = StratifiedKFold(
+    n_splits=5,
+    shuffle=True,
+    random_state=42
+)
+
+
+# ------------------------------------------------------------
+# 2. Generate out-of-fold CALIBRATED probabilities
+# ------------------------------------------------------------
+# sigmoid_model is our:
+#
+# CalibratedClassifierCV(
+#     estimator=best_hgb,
+#     method="sigmoid",
+#     cv=5
+# )
+#
+# cross_val_predict creates predictions for each training
+# observation from a model that did NOT train on that
+# observation.
+#
+# This gives us probabilities suitable for threshold selection.
+
+oof_calibrated_proba = cross_val_predict(
+    sigmoid_model,
+    X_train,
+    y_train,
+    cv=cv,
+    method="predict_proba",
+    n_jobs=-1
+)[:, 1]
+
+
+print("Number of OOF predictions:", len(oof_calibrated_proba))
+print("Training examples:", len(y_train))
+
+
+# ------------------------------------------------------------
+# 3. Search candidate thresholds
+# ------------------------------------------------------------
+# Because calibration moved probabilities downward,
+# the optimal threshold may now be substantially below 0.50.
+#
+# We'll search a broad range.
+
+thresholds = np.arange(
+    0.05,
+    0.61,
+    0.01
+)
+
+results = []
+
+for threshold in thresholds:
+
+    y_pred_threshold = (
+        oof_calibrated_proba >= threshold
+    ).astype(int)
+
+    precision = precision_score(
+        y_train,
+        y_pred_threshold,
+        zero_division=0
+    )
+
+    recall = recall_score(
+        y_train,
+        y_pred_threshold,
+        zero_division=0
+    )
+
+    f1 = f1_score(
+        y_train,
+        y_pred_threshold,
+        zero_division=0
+    )
+
+    results.append({
+        "threshold": threshold,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1
+    })
+
+
+threshold_results = pd.DataFrame(results)
+
+
+# ------------------------------------------------------------
+# 4. Find threshold with best OOF F1
+# ------------------------------------------------------------
+
+best_row = threshold_results.loc[
+    threshold_results["f1"].idxmax()
+]
+
+CALIBRATED_THRESHOLD = best_row["threshold"]
+
+
+print("\nBEST CALIBRATED THRESHOLD")
+print("-------------------------")
+
+print(
+    f"Threshold: {CALIBRATED_THRESHOLD:.2f}"
+)
+
+print(
+    f"OOF Precision: {best_row['precision']:.4f}"
+)
+
+print(
+    f"OOF Recall: {best_row['recall']:.4f}"
+)
+
+print(
+    f"OOF F1: {best_row['f1']:.4f}"
+)
+
+
+# ------------------------------------------------------------
+# 5. Show thresholds around the optimum
+# ------------------------------------------------------------
+
+best_index = threshold_results["f1"].idxmax()
+
+start = max(0, best_index - 5)
+end = min(
+    len(threshold_results),
+    best_index + 6
+)
+
+print("\nThresholds around optimum:")
+print(
+    threshold_results.iloc[start:end].to_string(
+        index=False
+    )
+)
+
+
+# ------------------------------------------------------------
+# 6. Plot Precision / Recall / F1 vs threshold
+# ------------------------------------------------------------
+
+plt.figure(figsize=(9, 6))
+
+plt.plot(
+    threshold_results["threshold"],
+    threshold_results["precision"],
+    label="Precision"
+)
+
+plt.plot(
+    threshold_results["threshold"],
+    threshold_results["recall"],
+    label="Recall"
+)
+
+plt.plot(
+    threshold_results["threshold"],
+    threshold_results["f1"],
+    label="F1"
+)
+
+plt.axvline(
+    CALIBRATED_THRESHOLD,
+    linestyle="--",
+    label=f"Best threshold = {CALIBRATED_THRESHOLD:.2f}"
+)
+
+plt.xlabel("Decision Threshold")
+plt.ylabel("Score")
+plt.title(
+    "Threshold Tuning — Sigmoid Calibrated HGB"
+)
+
+plt.legend()
+plt.grid(alpha=0.3)
+
+plt.show()
+
+
+# ============================================================
+# FINAL HELD-OUT TEST EVALUATION
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 7. Fit final calibrated model
+# ------------------------------------------------------------
+# We already fitted sigmoid_model earlier, but fitting here
+# makes this section self-contained and ensures it is trained
+# on all of X_train before final evaluation.
+
+sigmoid_model.fit(
+    X_train,
+    y_train
+)
+
+
+# ------------------------------------------------------------
+# 8. Generate calibrated TEST probabilities
+# ------------------------------------------------------------
+
+test_calibrated_proba = (
+    sigmoid_model.predict_proba(X_test)[:, 1]
+)
+
+
+# ------------------------------------------------------------
+# 9. Apply LOCKED threshold
+# ------------------------------------------------------------
+
+y_pred_calibrated = (
+    test_calibrated_proba >= CALIBRATED_THRESHOLD
+).astype(int)
+
+
+# ------------------------------------------------------------
+# 10. Final test metrics
+# ------------------------------------------------------------
+
+test_accuracy = accuracy_score(
+    y_test,
+    y_pred_calibrated
+)
+
+test_precision = precision_score(
+    y_test,
+    y_pred_calibrated
+)
+
+test_recall = recall_score(
+    y_test,
+    y_pred_calibrated
+)
+
+test_f1 = f1_score(
+    y_test,
+    y_pred_calibrated
+)
+
+
+print("\nFINAL CALIBRATED TEST RESULTS")
+print("-----------------------------")
+
+print(
+    f"Threshold: {CALIBRATED_THRESHOLD:.2f}"
+)
+
+print(
+    f"Accuracy:  {test_accuracy:.4f}"
+)
+
+print(
+    f"Precision: {test_precision:.4f}"
+)
+
+print(
+    f"Recall:    {test_recall:.4f}"
+)
+
+print(
+    f"F1:        {test_f1:.4f}"
+)
+
+
+# ------------------------------------------------------------
+# 11. Classification report
+# ------------------------------------------------------------
+
+print("\nClassification Report:")
+print(
+    classification_report(
+        y_test,
+        y_pred_calibrated,
+        target_names=[
+            "Not Injured",
+            "Injured"
+        ]
+    )
+)
+
+
+# ------------------------------------------------------------
+# 12. Confusion matrix
+# ------------------------------------------------------------
+
+cm = confusion_matrix(
+    y_test,
+    y_pred_calibrated
+)
+
+print("Confusion Matrix:")
+print(cm)
+
+
+
+
+import joblib
+
+# ============================================================
+# SAVE FINAL DEPLOYMENT ARTIFACT
+# ============================================================
+
+deployment_artifact = {
+    "model": sigmoid_model,
+    "threshold": float(CALIBRATED_THRESHOLD)
+}
+
+joblib.dump(
+    deployment_artifact,
+    "injury_risk_model.joblib"
+)
+
+print("Model saved!")
+
+
+# ============================================================
+# RELOAD MODEL
+# ============================================================
+
+loaded_artifact = joblib.load(
+    "injury_risk_model.joblib"
+)
+
+loaded_model = loaded_artifact["model"]
+loaded_threshold = loaded_artifact["threshold"]
+
+print("Loaded threshold:", loaded_threshold)
+
+
+# ============================================================
+# TEST RAW INFERENCE
+# ============================================================
+
+# Grab one RAW row from X_test.
+# Do NOT manually preprocess it.
+example = X_test.iloc[[0]]
+
+probability = loaded_model.predict_proba(example)[0, 1]
+
+prediction = int(
+    probability >= loaded_threshold
+)
+
+print(f"Injury probability: {probability:.4f}")
+print(f"Threshold: {loaded_threshold:.2f}")
+print(f"Elevated injury risk: {bool(prediction)}")
+print(f"Actual class: {y_test.iloc[0]}")
+
+
+original_probability = sigmoid_model.predict_proba(
+    X_test.iloc[[0]]
+)[0, 1]
+
+loaded_probability = loaded_model.predict_proba(
+    X_test.iloc[[0]]
+)[0, 1]
+
+print("Original:", original_probability)
+print("Reloaded:", loaded_probability)
+
+assert np.isclose(
+    original_probability,
+    loaded_probability
+)
+
+print("Serialization test passed!")
